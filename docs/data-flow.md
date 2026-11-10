@@ -20,8 +20,9 @@ Browser medic                     Server ScribMed RO                    Procesat
                                          referința la textul brut eliminată
    transcriere redactată ◀──────────  9. NDJSON „done” (no-store)
 10. POST /api/generate-note ────────▶ 11. RE-redactare server-side (clientul nu e de încredere)
-                                      12. prompt strict + transcriere ────▶ Claude pe Amazon Bedrock
-                                                                            (eu-central-1)
+                                      12. prompt strict + transcriere ────▶ Claude in Amazon Bedrock
+                                                                            (endpoint eu-central-1; rutare
+                                                                             Global/EU – vezi §4)
                                       13. text fișă ◀─────────────────────
                                       14. normalizare 6 secțiuni + verificări grounding
    fișă + avertismente ◀────────────  15. răspuns JSON (no-store)
@@ -60,8 +61,8 @@ Eliminarea referințelor JavaScript și suprascrierea buffer-elor Node.js reduc 
 
 | Procesator | Scop | Date primite | Regiune (configurabilă) | De verificat contractual / tehnic |
 |---|---|---|---|---|
-| Microsoft Azure AI Speech | transcriere | audio consultație | `AZURE_SPEECH_REGION` (implicit `westeurope`) | DPA Microsoft, politica de logging/retenție a serviciului, disponibilitatea Fast Transcription și a `ro-RO` în regiune |
-| Amazon Bedrock (Anthropic Claude) | redactare fișă | transcriere redactată + prompt | `BEDROCK_REGION` (implicit `eu-central-1`) | DPA AWS, *model invocation logging* dezactivat, disponibilitatea modelului în regiune (sau inference profile cu rutare în afara regiunii) |
+| Microsoft Azure AI Speech | transcriere | audio consultație | `AZURE_SPEECH_REGION` (implicit `westeurope`) | DPA Microsoft, politica de logging/retenție a serviciului, disponibilitatea Fast Transcription și a `ro-RO` în regiune (`npm run verify:azure`) |
+| Amazon Bedrock (Claude in Amazon Bedrock, endpoint bedrock-mantle) | redactare fișă | transcriere redactată + prompt | endpoint în `BEDROCK_REGION` (implicit `eu-central-1`); **locul procesării depinde de rutare**: eu-central-1 oferă doar „Global” (toate regiunile) sau „EU” (geografie UE), nu procesare exclusiv în Frankfurt; „In-region only” în UE: eu-north-1, eu-west-1 | DPA AWS, decizia de rutare, *model invocation logging* (aplicabilitate la Mantle de confirmat), CloudTrail/CloudWatch |
 | AWS Cognito | autentificare | e-mail, parolă (hash la Cognito) | `COGNITO_REGION` | DPA AWS |
 | Furnizor PostgreSQL (ex. RDS) | date de cont | date de cont, metrici | la alegere | criptare at-rest, backup |
 

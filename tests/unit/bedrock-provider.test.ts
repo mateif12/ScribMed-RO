@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { BedrockClaudeProvider, type MessagesClient } from "@/lib/ai/bedrock-claude-provider";
+import { BedrockClaudeProvider, mapBedrockError, type MessagesClient } from "@/lib/ai/bedrock-claude-provider";
 import { NoteProviderError } from "@/lib/ai/types";
 
 const config = { region: "eu-central-1", modelId: "anthropic.claude-sonnet-5-5", maxTokens: 8000, timeoutMs: 60_000 };
@@ -38,14 +38,26 @@ describe("BedrockClaudeProvider", () => {
     expect((err as NoteProviderError).kind).toBe("refusal");
   });
 
-  it("retries once on the fallback model after a refusal", async () => {
+  it("uses the fallback model once after a refusal and REPORTS the switch (never silent)", async () => {
     const { client, create } = clientReturning(
       { stop_reason: "refusal", content: [] },
       { stop_reason: "end_turn", content: [{ type: "text", text: "ok" }] },
     );
-    const out = await new BedrockClaudeProvider({ ...config, fallbackModelId: "anthropic.claude-sonnet-5" }, client).generateNote("t");
-    expect(out).toBe("ok");
+    const gen = await new BedrockClaudeProvider({ ...config, fallbackModelId: "anthropic.claude-sonnet-5" }, client).generateNoteWithMetadata("t");
+    expect(gen).toEqual({ text: "ok", model: "anthropic.claude-sonnet-5", fallbackUsed: true });
     expect((create.mock.calls[1]![0] as Record<string, unknown>).model).toBe("anthropic.claude-sonnet-5");
+  });
+
+  it("never substitutes a model on its own", async () => {
+    const { client, create } = clientReturning({ stop_reason: "end_turn", content: [{ type: "text", text: "ok" }] });
+    const gen = await new BedrockClaudeProvider(config, client).generateNoteWithMetadata("t");
+    expect(gen.fallbackUsed).toBe(false);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores thinking blocks and returns only text", async () => {
+    const { client } = clientReturning({ stop_reason: "end_turn", content: [{ type: "thinking" }, { type: "text", text: "fișă" }] });
+    expect(await new BedrockClaudeProvider(config, client).generateNote("t")).toBe("fișă");
   });
 
   it("rejects truncated output", async () => {
@@ -57,8 +69,25 @@ describe("BedrockClaudeProvider", () => {
     const create = vi.fn().mockRejectedValue(Object.assign(new Error("prompt: Pacient X ..."), { status: 503 }));
     const p = new BedrockClaudeProvider(config, { messages: { create } } as unknown as MessagesClient);
     const err = (await p.generateNote("t").catch((e: unknown) => e)) as NoteProviderError;
-    expect(err.kind).toBe("unavailable");
+    expect(err).toMatchObject({ kind: "unavailable", status: 503 });
     expect(err.message).not.toContain("Pacient");
-    expect(err.message).toContain("503");
+  });
+
+  it.each([
+    [403, "access_denied"],
+    [401, "access_denied"],
+    [404, "config"],
+    [400, "bad_request"],
+    [429, "rate_limited"],
+    [408, "timeout"],
+    [500, "unavailable"],
+  ])("maps HTTP %i to %s", (status, kind) => {
+    expect(mapBedrockError(Object.assign(new Error("x"), { status })).kind).toBe(kind);
+  });
+
+  it("maps SDK connection timeouts", () => {
+    const e = new Error("Request timed out.");
+    e.name = "APIConnectionTimeoutError";
+    expect(mapBedrockError(e).kind).toBe("timeout");
   });
 });

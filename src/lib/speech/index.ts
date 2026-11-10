@@ -19,6 +19,7 @@ export function getSpeechProvider(): SpeechToTextProvider {
           apiVersion: env.AZURE_SPEECH_API_VERSION,
           timeoutMs: env.AZURE_SPEECH_TIMEOUT_MS,
           diarization: env.AZURE_SPEECH_DIARIZATION,
+          maxRetries: env.AZURE_SPEECH_MAX_RETRIES,
         })
       : new MockSpeechProvider(env.MOCK_PROVIDER_LATENCY_MS);
   return instance;

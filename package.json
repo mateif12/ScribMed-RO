@@ -2,7 +2,7 @@
   "name": "scribmed-ro",
   "version": "0.1.0",
   "private": true,
-  "description": "ScribMed RO – Ambient Clinical Intelligence pentru medici și clinici din România",
+  "description": "ScribMed RO \u2013 Ambient Clinical Intelligence pentru medici \u0219i clinici din Rom\u00e2nia",
   "engines": {
     "node": ">=20.9"
   },
@@ -13,9 +13,14 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test --trace off",
+    "test:e2e": "playwright test --trace off && playwright test -c playwright.providers.config.ts --trace off",
     "db:migrate": "tsx scripts/migrate.ts",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "test:e2e:mock": "playwright test --trace off",
+    "test:e2e:providers": "playwright test -c playwright.providers.config.ts --trace off",
+    "test:e2e:live": "playwright test -c playwright.live.config.ts --trace off",
+    "verify:azure": "tsx scripts/verify-azure.ts",
+    "verify:bedrock": "tsx scripts/verify-bedrock.ts"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^1.1.1",
@@ -40,6 +45,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@aws-sdk/client-bedrock": "^3.1165.0",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.3.5",
     "@testing-library/dom": "^10.4.2",

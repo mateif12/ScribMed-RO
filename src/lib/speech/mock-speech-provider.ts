@@ -13,7 +13,7 @@ export class MockSpeechProvider implements SpeechToTextProvider {
 
   async transcribe(audio: Buffer | Uint8Array, options?: TranscribeOptions): Promise<string> {
     if (audio.byteLength === 0) {
-      throw new SpeechProviderError("Audio gol", { retryable: false });
+      throw new SpeechProviderError("Audio gol", { retryable: false, kind: "empty" });
     }
     if (this.latencyMs > 0) {
       await new Promise<void>((resolve, reject) => {

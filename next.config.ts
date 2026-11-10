@@ -21,6 +21,8 @@ const commonHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // E2E servers use isolated build directories so they never share a cache with `next build`.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   poweredByHeader: false,
   reactStrictMode: true,
   productionBrowserSourceMaps: false,

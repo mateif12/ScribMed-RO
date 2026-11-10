@@ -6,7 +6,8 @@ import { generateClinicalNote } from "@/services/consultation-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+// Must exceed BEDROCK_TIMEOUT_MS × (BEDROCK_MAX_RETRIES + 1) = 180 s × 2 = 360 s with defaults.
+export const maxDuration = 420;
 
 /**
  * Generates a structured note from a transcript. The transcript is re-redacted

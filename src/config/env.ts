@@ -32,18 +32,25 @@ const envSchema = z
 
     SPEECH_PROVIDER: z.enum(["mock", "azure"]).default("mock"),
     AZURE_SPEECH_KEY: z.string().optional(),
-    AZURE_SPEECH_REGION: z.string().default("westeurope"),
+    // Interpolated into a hostname – restrict to Azure region syntax.
+    AZURE_SPEECH_REGION: z.string().regex(/^[a-z0-9]+$/, "regiune Azure invalidă").default("westeurope"),
     AZURE_SPEECH_ENDPOINT: z.string().url().optional(),
     AZURE_SPEECH_LOCALE: z.string().default("ro-RO"),
     AZURE_SPEECH_API_VERSION: z.string().default("2024-11-15"),
     AZURE_SPEECH_TIMEOUT_MS: z.coerce.number().int().min(10_000).default(600_000),
     AZURE_SPEECH_DIARIZATION: boolish,
+    /** Verified contract: Fast Transcription accepts audio < 2 h (api-version 2024-11-15). */
+    AZURE_SPEECH_MAX_RETRIES: z.coerce.number().int().min(0).max(2).default(1),
 
     NOTE_PROVIDER: z.enum(["mock", "bedrock"]).default("mock"),
-    BEDROCK_REGION: z.string().default("eu-central-1"),
-    BEDROCK_MODEL_ID: z.string().default("anthropic.claude-sonnet-5-5"),
+    BEDROCK_REGION: z.string().regex(/^[a-z]{2}(-[a-z]+)+-\d$/, "regiune AWS invalidă").default("eu-central-1"),
+    // No default: the operator must set the exact model / inference-profile ID enabled in their account.
+    BEDROCK_MODEL_ID: z.string().regex(/^[A-Za-z0-9.:/_-]+$/, "ID model invalid").optional(),
+    /** Optional endpoint override (VPC endpoint, or a local contract stub in tests). */
+    BEDROCK_ENDPOINT_URL: z.string().url().optional(),
+    BEDROCK_MAX_RETRIES: z.coerce.number().int().min(0).max(3).default(1),
     BEDROCK_FALLBACK_MODEL_ID: z.string().optional(),
-    BEDROCK_MAX_TOKENS: z.coerce.number().int().min(1000).max(64000).default(8000),
+    BEDROCK_MAX_TOKENS: z.coerce.number().int().min(1000).max(64000).default(16000),
     BEDROCK_EFFORT: z.enum(["low", "medium", "high"]).optional(),
     BEDROCK_TIMEOUT_MS: z.coerce.number().int().min(10_000).default(180_000),
 
@@ -52,6 +59,9 @@ const envSchema = z
     MAX_AUDIO_BYTES: z.coerce.number().int().min(1024).default(40 * 1024 * 1024),
     MAX_TRANSCRIPT_CHARS: z.coerce.number().int().min(1000).default(200_000),
     MOCK_PROVIDER_LATENCY_MS: z.coerce.number().int().min(0).default(600),
+    ALLOW_MOCK_PROVIDERS_IN_PRODUCTION: boolish,
+    /** Per-instance cap on simultaneous in-memory audio uploads (memory protection). */
+    MAX_CONCURRENT_TRANSCRIPTIONS: z.coerce.number().int().min(1).max(100).default(4),
 
     RATE_LIMIT_TRANSCRIBE_PER_HOUR: z.coerce.number().int().min(1).default(30),
     RATE_LIMIT_GENERATE_PER_HOUR: z.coerce.number().int().min(1).default(60),
@@ -65,6 +75,13 @@ const envSchema = z
       if (env.AUTH_PROVIDER === "mock" && !env.ALLOW_MOCK_AUTH_IN_PRODUCTION) {
         ctx.addIssue({ code: "custom", path: ["AUTH_PROVIDER"], message: "mock auth este interzis în producție" });
       }
+      if ((env.SPEECH_PROVIDER === "mock" || env.NOTE_PROVIDER === "mock") && !env.ALLOW_MOCK_PROVIDERS_IN_PRODUCTION) {
+        ctx.addIssue({ code: "custom", path: ["NOTE_PROVIDER"], message: "providerii mock sunt interziși în producție (generează conținut sintetic)" });
+      }
+      for (const key of ["AZURE_SPEECH_ENDPOINT", "BEDROCK_ENDPOINT_URL"] as const) {
+        const v = env[key];
+        if (v && !v.startsWith("https://")) ctx.addIssue({ code: "custom", path: [key], message: "trebuie să folosească https în producție" });
+      }
     }
     if (env.AUTH_PROVIDER === "cognito" && (!env.COGNITO_USER_POOL_ID || !env.COGNITO_CLIENT_ID)) {
       ctx.addIssue({ code: "custom", path: ["COGNITO_USER_POOL_ID"], message: "necesar pentru AUTH_PROVIDER=cognito" });
@@ -74,6 +91,9 @@ const envSchema = z
     }
     if (env.SPEECH_PROVIDER === "azure" && !env.AZURE_SPEECH_KEY) {
       ctx.addIssue({ code: "custom", path: ["AZURE_SPEECH_KEY"], message: "necesar pentru SPEECH_PROVIDER=azure" });
+    }
+    if (env.NOTE_PROVIDER === "bedrock" && !env.BEDROCK_MODEL_ID) {
+      ctx.addIssue({ code: "custom", path: ["BEDROCK_MODEL_ID"], message: "necesar pentru NOTE_PROVIDER=bedrock (nu se presupune un model implicit)" });
     }
   });
 

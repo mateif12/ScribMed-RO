@@ -58,7 +58,7 @@ const securityControls = [
   { icon: Trash2, title: "Fără stocarea conținutului clinic", text: "Audio, transcrierile și fișele nu sunt salvate în baza de date. Sesiunea se golește la o consultație nouă." },
   { icon: EyeOff, title: "Redactarea identificatorilor", text: "Identificatorii direcți sunt eliminați înaintea trimiterii către modelul AI. Datele clinice rămân date sensibile." },
   { icon: Lock, title: "Criptare în tranzit", text: "Comunicare exclusiv prin HTTPS. Cheile API rămân pe server, niciodată în browser." },
-  { icon: ServerCog, title: "Procesare în regiuni UE", text: "Furnizori configurați în regiuni din Uniunea Europeană (AWS eu-central-1, Azure Europe)." },
+  { icon: ServerCog, title: "Furnizori cloud din UE", text: "Servicii configurate în regiuni europene (Azure Europe, AWS Frankfurt). Rutarea efectivă a procesării AI depinde de configurația Bedrock aleasă – detalii în documentația de securitate." },
   { icon: KeyRound, title: "Izolare între clinici", text: "Fiecare organizație își vede doar propriile date operaționale. Acces pe roluri." },
   { icon: ShieldCheck, title: "Jurnale fără date clinice", text: "Jurnalele conțin doar metadate operaționale. Fără analytics sau session replay terțe." },
 ];

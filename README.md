@@ -58,10 +58,12 @@ Apoi în `.env.local`: `DATABASE_PROVIDER=postgres` și `DATABASE_URL=...`, urma
 Pași detaliați în [`docs/deployment.md`](docs/deployment.md):
 
 - **Azure AI Speech**: `SPEECH_PROVIDER=azure`, `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` (regiune UE cu fast transcription), `AZURE_SPEECH_LOCALE=ro-RO`.
-- **Claude pe Amazon Bedrock**: acces la model în consola Bedrock (`eu-central-1`), rol IAM cu permisiune de invocare, `NOTE_PROVIDER=bedrock`, `BEDROCK_MODEL_ID`, invocation logging dezactivat.
+- **Claude in Amazon Bedrock**: acces la Claude Sonnet 5.5 în consola Bedrock, rol IAM cu `bedrock-mantle:CreateInference`, `NOTE_PROVIDER=bedrock`, `BEDROCK_MODEL_ID` (obligatoriu, fără valoare implicită), decizie explicită de rutare (Global / EU / in-region), invocation logging dezactivat.
 - **AWS Cognito**: User Pool + App client cu `ALLOW_USER_PASSWORD_AUTH`, `AUTH_PROVIDER=cognito`, `COGNITO_*`.
 
-Lista completă: [`docs/environment-variables.md`](docs/environment-variables.md).
+Lista completă: [`docs/environment-variables.md`](docs/environment-variables.md). Ce este verificat și ce nu: [`docs/provider-verification.md`](docs/provider-verification.md).
+
+> Bedrock: `eu-central-1` nu este o regiune „in-region only” pentru Claude – alegerea regiunii **nu garantează** procesarea exclusiv în UE. Vezi `docs/deployment.md` §5.
 
 ## Scripturi
 
@@ -71,7 +73,9 @@ Lista completă: [`docs/environment-variables.md`](docs/environment-variables.md
 | `npm run build` / `npm start` | build și pornire producție |
 | `npm run typecheck` | TypeScript strict (`tsc --noEmit`) |
 | `npm test` | Vitest: teste unitare și de integrare |
-| `npm run test:e2e` | Playwright (pornește singur serverul; Chromium cu microfon sintetic) |
+| `npm run test:e2e` | Playwright: suita mock + suita cu adaptoarele reale Azure/Bedrock contra stub-urilor de contract (fără credențiale) |
+| `npm run test:e2e:live` | opțional: lanțul complet cu Azure și Bedrock reale, folosind un WAV **sintetic** ca microfon |
+| `npm run verify:azure` / `npm run verify:bedrock` | verifică o configurație reală (locale ro-RO, invocation logging, rutare, apel sintetic) |
 | `npm run db:migrate` / `npm run db:seed` | migrări PostgreSQL / cont demo |
 
 Testele PostgreSQL rulează doar cu `TEST_DATABASE_URL` setat (tabelele din acea bază sunt golite):
@@ -86,8 +90,9 @@ TEST_DATABASE_URL=postgres://USER:PASS@localhost:5432/scribmed_test npm test
 - [Fluxuri de date, retenție, procesatori terți](docs/data-flow.md)
 - [Securitate, limite ale redactării, cerințe de conformitate rămase](docs/security.md)
 - [Implementare și conectarea providerilor](docs/deployment.md)
+- [Verificarea integrărilor AI (confirmat vs. neconfirmat)](docs/provider-verification.md)
 - [Variabile de mediu](docs/environment-variables.md)
 
 ## Confidențialitate – pe scurt
 
-Audio, transcrierile și fișele sunt procesate tranzitoriu și **nu sunt stocate** de aplicație (nici în baza de date, nici în browser, nici în jurnale). Redactarea automată este *best effort* și **nu** echivalează cu anonimizarea: textul rămâne dată de sănătate. Măsurile tehnice nu fac, singure, utilizarea conformă GDPR – vezi [`docs/security.md`](docs/security.md) §4.
+Audio, transcrierile și fișele sunt procesate tranzitoriu și **nu sunt stocate** de aplicație (nici în baza de date, nici în browser, nici în jurnale). Redactarea automată este *best effort* și **nu** echivalează cu anonimizarea: textul rămâne dată de sănătate. Măsurile tehnice nu fac, singure, utilizarea conformă GDPR – vezi [`docs/security.md`](docs/security.md) §5.

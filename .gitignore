@@ -17,3 +17,4 @@ next-env.d.ts
 *.wav
 *.ogg
 *.mp3
+.next-e2e*/

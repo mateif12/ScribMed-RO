@@ -4,6 +4,7 @@ const PORT = Number(process.env.E2E_PORT ?? 3200);
 
 export default defineConfig({
   testDir: "tests/e2e",
+  testIgnore: [/providers\.spec\.ts/, /live\.spec\.ts/],
   timeout: 60_000,
   fullyParallel: false,
   workers: 1,
@@ -39,6 +40,7 @@ export default defineConfig({
       MOCK_PROVIDER_LATENCY_MS: "300",
       APP_URL: `http://localhost:${PORT}`,
       NEXT_TELEMETRY_DISABLED: "1",
+      NEXT_DIST_DIR: ".next-e2e",
       RATE_LIMIT_AUTH_PER_15_MIN: "100",
     },
   },

@@ -4,6 +4,7 @@ import { AlertCircle, Loader2, MailCheck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useHydrated } from "@/hooks/use-hydrated";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -22,6 +23,7 @@ export function RegisterForm({ specialties, passwordHint }: { specialties: Speci
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const hydrated = useHydrated();
   const [accepted, setAccepted] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState<string | null>(null);
 
@@ -72,7 +74,7 @@ export function RegisterForm({ specialties, passwordHint }: { specialties: Speci
 
   if (confirmEmail) {
     return (
-      <form onSubmit={onConfirm} className="space-y-5">
+      <form method="post" action="#" onSubmit={onConfirm} className="space-y-5">
         <Alert variant="success">
           <MailCheck />
           <AlertDescription>Am trimis un cod de confirmare la {confirmEmail}. Introduceți-l mai jos.</AlertDescription>
@@ -84,7 +86,7 @@ export function RegisterForm({ specialties, passwordHint }: { specialties: Speci
           </Alert>
         ) : null}
         <FormField id="code" label="Cod de confirmare" inputMode="numeric" pattern="\d{6}" maxLength={6} autoComplete="one-time-code" required />
-        <Button type="submit" className="w-full" size="lg" disabled={pending}>
+        <Button type="submit" className="w-full" size="lg" disabled={!hydrated || pending}>
           {pending ? <Loader2 className="animate-spin" /> : null}
           Confirmă contul
         </Button>
@@ -93,7 +95,7 @@ export function RegisterForm({ specialties, passwordHint }: { specialties: Speci
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4" noValidate>
+    <form method="post" action="#" onSubmit={onSubmit} className="space-y-4" noValidate>
       {error ? (
         <Alert variant="destructive">
           <AlertCircle />
@@ -125,7 +127,7 @@ export function RegisterForm({ specialties, passwordHint }: { specialties: Speci
           de utilizare.
         </Label>
       </div>
-      <Button type="submit" className="w-full" size="lg" disabled={pending || !accepted}>
+      <Button type="submit" className="w-full" size="lg" disabled={!hydrated || pending || !accepted}>
         {pending ? <Loader2 className="animate-spin" /> : null}
         Creează contul
       </Button>

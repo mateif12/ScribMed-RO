@@ -18,8 +18,10 @@ interface Utterance {
   sentence: string;
 }
 
-const DOCTOR_LABELS = /^(doctor|doctorul|medic|medicul|dr\.?|vorbitor 1)\s*:/i;
-const PATIENT_LABELS = /^(pacient|pacientul|pacienta|vorbitor 2)\s*:/i;
+const DOCTOR_LABELS = /^(doctor|doctorul|medic|medicul|dr\.?)\s*:/i;
+const PATIENT_LABELS = /^(pacient|pacientul|pacienta)\s*:/i;
+/** Diarization labels ("Vorbitor N") carry no role information – treated as unknown speaker. */
+const NEUTRAL_LABELS = /^vorbitor\s+\S+\s*:/i;
 
 const RX = {
   complaint: /(m[aă] doare|m[aă] dor|am venit|acuz|dureri?|am (?:o )?(?:tuse|febr[aă]|grea[tț][aă]|ame[tț]eal[aă])|nu m[aă] simt|problema)/i,
@@ -55,6 +57,8 @@ export function parseTranscript(transcript: string): Utterance[] {
     } else if (PATIENT_LABELS.test(line)) {
       speaker = "patient";
       content = line.replace(PATIENT_LABELS, "").trim();
+    } else if (NEUTRAL_LABELS.test(line)) {
+      content = line.replace(NEUTRAL_LABELS, "").trim();
     }
     for (const sentence of splitSentences(content)) utterances.push({ speaker, sentence });
   }

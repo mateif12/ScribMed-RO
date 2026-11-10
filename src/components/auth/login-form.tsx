@@ -4,6 +4,7 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useHydrated } from "@/hooks/use-hydrated";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { apiFetch, ApiClientError } from "@/lib/api/client";
@@ -13,6 +14,7 @@ export function LoginForm({ next, demo }: { next: string; demo?: { email: string
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const hydrated = useHydrated();
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -30,7 +32,7 @@ export function LoginForm({ next, demo }: { next: string; demo?: { email: string
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-5" noValidate>
+    <form method="post" action="#" onSubmit={onSubmit} className="space-y-5" noValidate>
       {error ? (
         <Alert variant="destructive">
           <AlertCircle />
@@ -46,7 +48,7 @@ export function LoginForm({ next, demo }: { next: string; demo?: { email: string
           </Link>
         </div>
       </div>
-      <Button type="submit" className="w-full" size="lg" disabled={pending}>
+      <Button type="submit" className="w-full" size="lg" disabled={!hydrated || pending}>
         {pending ? <Loader2 className="animate-spin" /> : null}
         Autentificare
       </Button>

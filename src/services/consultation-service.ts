@@ -86,8 +86,9 @@ export async function transcribeAndRedact(params: {
       .catch(() => undefined);
     if (err instanceof AppError) throw err;
     if (err instanceof SpeechProviderError) {
-      safeLog.warn({ event: "speech_provider_error", provider: provider.name, status: err.status ?? undefined });
-      throw new AppError("PROVIDER_ERROR", "Transcrierea nu a reușit. Încercați din nou.");
+      // Only enum-like fields are logged (kind, HTTP status, provider error code) – never messages.
+      safeLog.warn({ event: "speech_provider_error", provider: provider.name, status: err.status ?? undefined, code: err.providerCode ?? err.kind });
+      throw new AppError(err.kind === "unsupported_media" ? "UNSUPPORTED_MEDIA_TYPE" : "PROVIDER_ERROR", err.message);
     }
     throw err;
   } finally {
@@ -126,9 +127,19 @@ export async function generateClinicalNote(params: {
   }
 
   try {
-    const raw = await provider.generateNote(redacted.text, specialty);
-    const normalized = normalizeNote(raw);
+    const generation = provider.generateNoteWithMetadata
+      ? await provider.generateNoteWithMetadata(redacted.text, specialty)
+      : { text: await provider.generateNote(redacted.text, specialty), model: provider.name, fallbackUsed: false };
+    const normalized = normalizeNote(generation.text);
     const warnings = checkGrounding(normalized.text, redacted.text);
+    if (generation.fallbackUsed) {
+      // Never switch models silently: the doctor sees it and an operational event is logged.
+      safeLog.warn({ event: "note_provider_fallback_used", provider: provider.name, code: generation.model });
+      warnings.push({
+        code: "FALLBACK_MODEL_USED",
+        message: `Modelul principal a refuzat cererea; fișa a fost generată cu modelul de rezervă configurat (${generation.model}). Verificați cu atenție.`,
+      });
+    }
     for (const id of normalized.missingHeadings) {
       const label = NOTE_SECTIONS.find((s) => s.id === id)?.label ?? id;
       warnings.push({ code: "MISSING_SECTION", message: `Secțiunea „${label}” lipsea din răspunsul modelului și a fost completată automat.` });
@@ -149,7 +160,7 @@ export async function generateClinicalNote(params: {
       .recordUsageEvent(scope, { userId: auth.userId, type: "note_generation_failed", processingMs: Date.now() - started })
       .catch(() => undefined);
     if (err instanceof NoteProviderError) {
-      safeLog.warn({ event: "note_provider_error", provider: provider.name, code: err.kind });
+      safeLog.warn({ event: "note_provider_error", provider: provider.name, code: err.kind, status: err.status ?? undefined });
       throw new AppError(err.kind === "refusal" ? "PROVIDER_REFUSAL" : "PROVIDER_ERROR", err.message);
     }
     throw err;

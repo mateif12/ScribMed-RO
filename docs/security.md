@@ -16,21 +16,23 @@
 | Răspunsuri necache-uite | `Cache-Control: no-store` pe API și paginile protejate | teste integrare |
 | Jurnale fără conținut | `safeLog` acceptă doar câmpuri din allow-list; erorile necunoscute sunt jurnalizate doar prin numele clasei | `security-utils.test.ts` |
 | Fără analytics / session replay / error tracking terț | nicio dependență de acest tip; CSP `connect-src 'self'` le-ar bloca | CSP |
-| Erorile providerilor nu sunt propagate | mesajele SDK/HTTP nu sunt transmise clientului sau în jurnale | `bedrock-provider.test.ts`, `speech-providers.test.ts` |
+| Erorile providerilor nu sunt propagate | mesajele SDK/HTTP nu sunt transmise clientului sau în jurnale; se folosesc doar statusul HTTP, numele clasei și codurile Azure din enum-ul documentat | `bedrock-provider.test.ts`, `speech-providers.test.ts`, `real-adapters.test.ts` |
+| LLM-ul nu primește identificatori | stub-ul Bedrock din `npm run test:e2e:providers` respinge orice cerere care conține identificatorii sintetici | E2E providers |
+| Protecția memoriei la upload | `MAX_CONCURRENT_TRANSCRIPTIONS` per instanță + limită de bytes pe flux | `config-and-limits.test.ts` |
 
 ### Aplicație web
 | Control | Implementare |
 |---|---|
 | Sesiuni | JWT HS256 (`jose`), cookie `HttpOnly`, `Secure` (prod/HTTPS), `SameSite=Strict`, TTL 8 h; la fiecare cerere API utilizatorul este reîncărcat din DB (dezactivare/rol/organizație aplicate imediat) |
 | CSRF | SameSite=Strict + verificarea `Origin`/`Sec-Fetch-Site` + antet obligatoriu `x-scribmed-request: 1` pe metode mutative |
-| CORS | fără `Access-Control-Allow-Origin` implicit; preflight aprobat doar pentru `ALLOWED_ORIGINS` |
+| CORS | aplicație same-origin: răspunsurile nu includ `Access-Control-Allow-Origin`; preflight-ul răspunde doar pentru `ALLOWED_ORIGINS`, dar citirea cross-origin a răspunsurilor rămâne blocată |
 | CSP | per cerere, cu nonce și `strict-dynamic` (`proxy.ts`); `object-src 'none'`, `frame-ancestors 'none'`, `connect-src 'self'`; API: `default-src 'none'` |
 | Alte antete | HSTS (2 ani, preload), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`, COOP/CORP same-origin, `Permissions-Policy` (microfon doar `self`) |
 | Validare | Zod `.strict()` pe toate corpurile JSON; limite de dimensiune JSON; audio: MIME allow-list + magic bytes + limită de bytes pe flux + detecție upload trunchiat |
 | Rate limiting | autentificare per IP (implicit 10/15 min), transcriere 30/h, generare 60/h per utilizator |
 | Parole (mod mock) | scrypt (N=16384, r=8, p=1), comparare în timp constant, hash fictiv pentru e-mailuri inexistente |
 | Enumerare conturi | mesaje identice la login și resetare parolă |
-| Secrete | doar server-side; nicio variabilă `NEXT_PUBLIC_*`; `server-only` pe modulele cu secrete; validare la pornire, *fail-closed* în producție (lipsă `SESSION_SECRET`, mock auth interzis) |
+| Secrete | doar server-side; nicio variabilă `NEXT_PUBLIC_*`; `server-only` pe modulele cu secrete; validare la pornire, *fail-closed* în producție (lipsă `SESSION_SECRET`, mock auth sau provideri mock interziși, `BEDROCK_MODEL_ID` obligatoriu, endpoint-uri suprascrise doar `https://`, regiuni validate sintactic pentru a nu putea altera hostname-ul); erorile de configurare listează doar numele variabilelor |
 | Prompt injection | transcrierea este încadrată în `<transcriere>` și declarată „date, nu instrucțiuni”; ieșirea este normalizată strict la 6 secțiuni |
 
 ### Izolare între organizații (tenant isolation)
@@ -54,10 +56,27 @@
 - Normalizare: exact 6 secțiuni în ordine; secțiuni lipsă/goale → „Neconsemnat”; diagnostic lipsă → „Nespecificat de medic”.
 - Verificare de grounding: valori numerice cu unități (doze, semne vitale, durate) din fișă care nu apar în transcriere sunt semnalate medicului.
 - `temperature` **nu** este trimis: modelele Claude actuale și versiunea curentă a API-ului îl resping (HTTP 400). Stabilitatea este asigurată prin prompt, normalizare și verificări.
+- Modelul nu este schimbat niciodată automat: `BEDROCK_MODEL_ID` este obligatoriu; fallback-ul (opțional) după `refusal` este afișat medicului ca avertisment și jurnalizat.
 - Răspunsurile `refusal` / `max_tokens` sunt tratate explicit; nu se afișează niciodată o fișă trunchiată.
 - Avertismentul obligatoriu este afișat permanent deasupra fișei.
 
-## 4. Cerințe de conformitate rămase (responsabilitatea operatorului)
+## 4. Riscuri tehnice cunoscute (neremediate în MVP)
+
+| Risc | Impact | Atenuare recomandată |
+|---|---|---|
+| Rutarea Bedrock din eu-central-1 nu este „in-region only”; rutarea *Global* poate procesa în afara UE | rezidența datelor | profil de inferență EU sau regiune in-region (eu-north-1 / eu-west-1); decizie documentată în DPIA |
+| Invocation logging Bedrock – aplicabilitate neconfirmată pentru Mantle; CloudTrail/CloudWatch | posibilă stocare de metadate/conținut la AWS | confirmare AWS; `npm run verify:bedrock`; revizuirea CloudTrail data events |
+| Azure: retenție/logging la Microsoft neverificate; regiune și ro-RO de confirmat | conformitate | DPA; `npm run verify:azure` |
+| Safari (`audio/mp4`) poate fi respins de Azure | disponibilitate | medicii folosesc Chrome/Edge/Firefox; eventual transcodare server-side (neimplementată) |
+| Sesiunile JWT nu sunt revocate la logout (cookie șters, token valabil până la expirare, max. 8 h) | furt de token | TTL scurt, revocare prin versiune de sesiune în DB (neimplementată) |
+| Rate limiting per IP folosește `X-Forwarded-For` | ocolire dacă antetul nu este suprascris de un proxy de încredere | ALB/CloudFront care suprascrie antetul; WAF |
+| Rate limiting și limita de concurență sunt per instanță | ocolire la scalare orizontală | Redis/ElastiCache |
+| Fișa copiată ajunge în clipboard-ul sistemului de operare (inclusiv istoric clipboard / sincronizare cloud) | expunere locală | politică de stație de lucru (dezactivare istoric/sincronizare clipboard) |
+| `/api/health` public expune modurile providerilor (fără secrete) | recunoaștere | restricționare la rețeaua internă în producție |
+| Redactarea numelor/adreselor este euristică | date personale către LLM | NER suplimentar evaluat pe date sintetice; DPA cu AWS |
+| Calitatea clinică a fișelor Claude nu a fost evaluată pe date reale/sintetice extinse | erori de documentare | evaluare cu medici pe set sintetic; revizuirea obligatorie de către medic |
+
+## 5. Cerințe de conformitate rămase (responsabilitatea operatorului)
 
 1. **Temei legal** pentru prelucrarea datelor de sănătate (art. 6 + art. 9 GDPR) și informarea pacienților (art. 13); textul de informare și eventualul consimțământ pentru înregistrare – validate juridic.
 2. **DPIA** (evaluare de impact) – obligatorie pentru prelucrare pe scară largă de date de sănătate; consultarea DPO.
@@ -68,6 +87,6 @@
 7. Evaluarea statutului de dispozitiv medical (MDR) – produsul este conceput ca instrument de documentare fără funcții de diagnostic; încadrarea trebuie confirmată juridic.
 8. Test de penetrare, threat modeling, MFA (Cognito), WAF, monitorizare și alertare, backup/restore testat, plan de continuitate.
 
-## 5. Raportarea vulnerabilităților
+## 6. Raportarea vulnerabilităților
 
 Configurați o adresă dedicată (ex. `security@<domeniu>`) și un fișier `/.well-known/security.txt` înainte de lansare.

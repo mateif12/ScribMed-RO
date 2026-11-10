@@ -16,8 +16,8 @@ ScribMed RO transformă conversația medic–pacient într-un **draft** de fiș�
 | Autentificare | AWS Cognito User Pools (`USER_PASSWORD_AUTH`) sau provider local mock |
 | Bază de date | PostgreSQL (≥ 13) prin `pg`, sau store în memorie pentru dezvoltare |
 | Speech-to-text | Azure AI Speech – Fast Transcription REST, sau mock |
-| LLM | Claude pe Amazon Bedrock (`@anthropic-ai/bedrock-sdk`, client `AnthropicBedrockMantle`), sau mock |
-| Teste | Vitest (unit + integrare), Playwright (E2E, Chromium cu microfon sintetic) |
+| LLM | Claude in Amazon Bedrock (`@anthropic-ai/bedrock-sdk`, client `AnthropicBedrockMantle`, endpoint `bedrock-mantle`, SigV4), sau mock |
+| Teste | Vitest (unit + integrare, inclusiv adaptoarele reale contra serverelor locale), Playwright (E2E mock, E2E cu adaptoarele reale contra stub-urilor de contract, E2E live opțional) |
 
 ## 3. Structura proiectului
 
@@ -47,7 +47,8 @@ src/
   types/           entități de domeniu
   proxy.ts         CSP cu nonce + protecția paginilor
 db/migrations/     schema SQL
-scripts/           migrate.ts, seed.ts
+scripts/           migrate.ts, seed.ts, verify-azure.ts, verify-bedrock.ts
+tests/e2e/stubs/   stub-uri de contract Azure + Bedrock pentru E2E
 tests/unit | integration | e2e
 ```
 
@@ -100,7 +101,7 @@ RESET (din orice stare) → idle, cu ștergerea tuturor datelor clinice din memo
 - Opus ~32 kbps ⇒ ~7,2 MB / 30 min (calcul: 32 000 bit/s × 1 800 s ÷ 8 = 7 200 000 B). Limita implicită este 40 MiB (`MAX_AUDIO_BYTES`), cu oprire automată la 45 min.
 - Azure: se folosește **Fast Transcription** (sincron, pe fișier). API-ul REST „short audio” acceptă doar ~60 s, iar batch transcription cere încărcarea audio într-un storage – ambele nepotrivite.
 - `/api/transcribe` este exclus din `proxy.ts`: în Next.js 16, când proxy-ul rulează, corpul cererii este clonat și **trunchiat silențios la 10 MB** (`proxyClientMaxBodySize`). Ruta citește fluxul cu limită strictă și verifică `Content-Length` pentru a detecta upload-uri incomplete.
-- `maxDuration` este setat pentru platformele care îl respectă; pe infrastructură proprie (container/ECS), timeout-urile load balancer-ului trebuie să depășească durata transcrierii (vezi `deployment.md`).
+- Azure: un singur termen limită total (`AZURE_SPEECH_TIMEOUT_MS`) acoperă și reîncercările; Bedrock: timeout per încercare × (reîncercări + 1). `maxDuration` (800 s / 420 s) este setat pentru platformele care îl respectă; pe infrastructură proprie (container/ECS), timeout-urile load balancer-ului trebuie să depășească durata transcrierii (vezi `deployment.md`).
 - Platformele serverless pot buferiza corpul cererii pe disc sau pot impune limite de dimensiune; nu presupunem procesare exclusiv în memorie pe astfel de platforme.
 
 ## 8. Specialități

@@ -3,6 +3,7 @@
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useHydrated } from "@/hooks/use-hydrated";
 import { FormField } from "@/components/auth/form-field";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ export function ProfileForm({ profile, organization, canEditOrganization, specia
   const router = useRouter();
   const [status, setStatus] = useState<{ kind: "success" | "error"; message: string } | null>(null);
   const [pending, setPending] = useState(false);
+  const hydrated = useHydrated();
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -53,7 +55,7 @@ export function ProfileForm({ profile, organization, canEditOrganization, specia
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid gap-6 lg:grid-cols-2">
+    <form method="post" action="#" onSubmit={onSubmit} className="grid gap-6 lg:grid-cols-2">
       <Card>
         <CardHeader>
           <CardTitle>Date profesionale</CardTitle>
@@ -97,7 +99,7 @@ export function ProfileForm({ profile, organization, canEditOrganization, specia
           </Alert>
         ) : null}
         <div>
-          <Button type="submit" disabled={pending}>
+          <Button type="submit" disabled={!hydrated || pending}>
             {pending ? <Loader2 className="animate-spin" /> : null}
             Salvează modificările
           </Button>

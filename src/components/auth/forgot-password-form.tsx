@@ -3,6 +3,7 @@
 import { AlertCircle, CheckCircle2, Info, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { useHydrated } from "@/hooks/use-hydrated";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { apiFetch, ApiClientError } from "@/lib/api/client";
@@ -14,6 +15,7 @@ export function ForgotPasswordForm({ passwordHint }: { passwordHint: string }) {
   const [devCode, setDevCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const hydrated = useHydrated();
 
   async function requestCode(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -70,7 +72,7 @@ export function ForgotPasswordForm({ passwordHint }: { passwordHint: string }) {
 
   if (step === "reset") {
     return (
-      <form onSubmit={reset} className="space-y-5">
+      <form method="post" action="#" onSubmit={reset} className="space-y-5">
         <Alert variant="info">
           <Info />
           <AlertDescription>
@@ -86,7 +88,7 @@ export function ForgotPasswordForm({ passwordHint }: { passwordHint: string }) {
         {errorAlert}
         <FormField id="code" label="Cod de resetare" inputMode="numeric" maxLength={6} autoComplete="one-time-code" required />
         <FormField id="newPassword" label="Parolă nouă" type="password" autoComplete="new-password" hint={passwordHint} required />
-        <Button type="submit" className="w-full" size="lg" disabled={pending}>
+        <Button type="submit" className="w-full" size="lg" disabled={!hydrated || pending}>
           {pending ? <Loader2 className="animate-spin" /> : null}
           Setează parola nouă
         </Button>
@@ -95,10 +97,10 @@ export function ForgotPasswordForm({ passwordHint }: { passwordHint: string }) {
   }
 
   return (
-    <form onSubmit={requestCode} className="space-y-5">
+    <form method="post" action="#" onSubmit={requestCode} className="space-y-5">
       {errorAlert}
       <FormField id="email" label="E-mail" type="email" autoComplete="email" required />
-      <Button type="submit" className="w-full" size="lg" disabled={pending}>
+      <Button type="submit" className="w-full" size="lg" disabled={!hydrated || pending}>
         {pending ? <Loader2 className="animate-spin" /> : null}
         Trimite codul de resetare
       </Button>

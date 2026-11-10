@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AzureSpeechProvider, formatAzureTranscript } from "@/lib/speech/azure-speech-provider";
+import { AzureSpeechProvider, classifyStatus, formatAzureTranscript } from "@/lib/speech/azure-speech-provider";
 import { MockSpeechProvider } from "@/lib/speech/mock-speech-provider";
 import { SYNTHETIC_TRANSCRIPTS } from "@/lib/speech/synthetic-transcripts";
 import { SpeechProviderError } from "@/lib/speech/types";
@@ -57,22 +57,99 @@ describe("AzureSpeechProvider (fast transcription REST)", () => {
     expect(text).toBe("Vorbitor 1: Ce vă supără?\nVorbitor 2: Tusea.\nVorbitor 1: De când?");
   });
 
-  it("maps HTTP errors to SpeechProviderError without exposing the response body", async () => {
-    const fetchImpl = vi.fn(async () => new Response("secret details", { status: 429 }));
-    const p = new AzureSpeechProvider({ ...config, fetchImpl: fetchImpl as unknown as typeof fetch });
-    const err = await p.transcribe(audio).catch((e: unknown) => e);
+  it("maps HTTP errors to typed, content-free SpeechProviderErrors", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ code: "TooManyRequests", message: "secret details about Pacient X" }, { status: 429 }));
+    const p = new AzureSpeechProvider({ ...config, maxRetries: 0, fetchImpl: fetchImpl as unknown as typeof fetch });
+    const err = (await p.transcribe(audio).catch((e: unknown) => e)) as SpeechProviderError;
     expect(err).toBeInstanceOf(SpeechProviderError);
-    expect((err as SpeechProviderError).retryable).toBe(true);
-    expect((err as SpeechProviderError).status).toBe(429);
-    expect((err as Error).message).not.toContain("secret");
+    expect(err).toMatchObject({ kind: "rate_limited", retryable: true, status: 429, providerCode: "TooManyRequests" });
+    expect(err.message).not.toContain("secret");
+    expect(JSON.stringify(err)).not.toContain("Pacient");
   });
 
-  it("maps network failures to a retryable error", async () => {
-    const fetchImpl = vi.fn(async () => {
-      throw new TypeError("fetch failed");
-    });
+  it("maps UnsupportedMediaType to a browser-specific Romanian message", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ code: "UnsupportedMediaType", message: "x" }, { status: 415 }));
     const p = new AzureSpeechProvider({ ...config, fetchImpl: fetchImpl as unknown as typeof fetch });
-    await expect(p.transcribe(audio)).rejects.toMatchObject({ retryable: true });
+    const err = (await p.transcribe(audio, { mimeType: "audio/mp4" }).catch((e: unknown) => e)) as SpeechProviderError;
+    expect(err.kind).toBe("unsupported_media");
+    expect(err.message).toMatch(/Chrome, Edge sau Firefox/);
+    expect(fetchImpl).toHaveBeenCalledTimes(1); // non-retryable
+  });
+
+  it("ignores provider error codes outside the documented enum", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ code: "Ion Popescu 1840512400123" }, { status: 400 }));
+    const err = (await new AzureSpeechProvider({ ...config, fetchImpl: fetchImpl as unknown as typeof fetch }).transcribe(audio).catch((e: unknown) => e)) as SpeechProviderError;
+    expect(err.providerCode).toBeNull();
+    expect(err.kind).toBe("invalid_request");
+  });
+
+  it("classifies auth failures", async () => {
+    const fetchImpl = vi.fn(async () => new Response("", { status: 401 }));
+    const err = (await new AzureSpeechProvider({ ...config, fetchImpl: fetchImpl as unknown as typeof fetch }).transcribe(audio).catch((e: unknown) => e)) as SpeechProviderError;
+    expect(err).toMatchObject({ kind: "auth", retryable: false });
+  });
+
+  it("retries once on 503 honouring Retry-After, then succeeds", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("", { status: 503, headers: { "retry-after": "2" } }))
+      .mockResolvedValueOnce(Response.json({ durationMilliseconds: 1, combinedPhrases: [{ text: "ok" }], phrases: [] }));
+    const sleep = vi.fn(async () => undefined);
+    const p = new AzureSpeechProvider({ ...config, fetchImpl: fetchImpl as unknown as typeof fetch, sleep });
+    expect(await p.transcribe(audio)).toBe("ok");
+    expect(sleep).toHaveBeenCalledWith(2000);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not wait for absurd Retry-After values", async () => {
+    const fetchImpl = vi.fn(async () => new Response("", { status: 429, headers: { "retry-after": "3600" } }));
+    const sleep = vi.fn(async () => undefined);
+    const p = new AzureSpeechProvider({ ...config, fetchImpl: fetchImpl as unknown as typeof fetch, sleep });
+    await expect(p.transcribe(audio)).rejects.toMatchObject({ kind: "rate_limited" });
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("maps network failures to a retryable error after retrying", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError("fetch failed: connect ECONNREFUSED 10.0.0.1");
+    });
+    const p = new AzureSpeechProvider({ ...config, fetchImpl: fetchImpl as unknown as typeof fetch, sleep: async () => undefined });
+    const err = (await p.transcribe(audio).catch((e: unknown) => e)) as SpeechProviderError;
+    expect(err).toMatchObject({ kind: "network", retryable: true });
+    expect(err.message).not.toContain("ECONNREFUSED");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("enforces one overall deadline (explicit timeout)", async () => {
+    const fetchImpl = vi.fn(
+      (_u: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((_res, rej) => init!.signal!.addEventListener("abort", () => rej(new DOMException("aborted", "AbortError")))),
+    );
+    const p = new AzureSpeechProvider({ ...config, timeoutMs: 50, fetchImpl: fetchImpl as unknown as typeof fetch });
+    await expect(p.transcribe(audio)).rejects.toMatchObject({ kind: "timeout" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("verifies locale support via the documented Transcribe locales list", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ Transcribe: ["en-US", "ro-RO"], Submit: ["ro-RO"] }));
+    const p = new AzureSpeechProvider({ ...config, fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(await p.verifyLocale()).toMatchObject({ supported: true });
+    expect(String((fetchImpl.mock.calls[0] as unknown[])[0])).toBe(
+      "https://westeurope.api.cognitive.microsoft.com/speechtotext/transcriptions/locales?api-version=2024-11-15",
+    );
+    const none = vi.fn(async () => Response.json({ Transcribe: ["en-US"] }));
+    expect((await new AzureSpeechProvider({ ...config, fetchImpl: none as unknown as typeof fetch }).verifyLocale()).supported).toBe(false);
+  });
+
+  it("rejects empty audio without calling Azure", async () => {
+    const fetchImpl = vi.fn();
+    await expect(new AzureSpeechProvider({ ...config, fetchImpl: fetchImpl as unknown as typeof fetch }).transcribe(new Uint8Array())).rejects.toMatchObject({ kind: "empty" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("classifyStatus covers timeouts and server errors", () => {
+    expect(classifyStatus(504, null)).toBe("timeout");
+    expect(classifyStatus(500, "InternalServerError")).toBe("unavailable");
   });
 
   it("requires an API key", () => {

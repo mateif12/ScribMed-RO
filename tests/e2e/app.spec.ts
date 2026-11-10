@@ -31,6 +31,17 @@ test("landing page presents the product in Romanian", async ({ page }) => {
   }
 });
 
+test("pre-hydration HTML can never submit credentials via GET", async ({ request }) => {
+  for (const path of ["/login", "/register", "/forgot-password"]) {
+    const html = await (await request.get(path)).text();
+    const forms = html.match(/<form[^>]*>/g) ?? [];
+    expect(forms.length, path).toBeGreaterThan(0);
+    for (const f of forms) expect(f, path).toMatch(/method="post"/);
+    // Submit buttons are rendered disabled until React hydrates.
+    for (const btn of html.match(/<button[^>]*type="submit"[^>]*>/g) ?? []) expect(btn, path).toMatch(/disabled=""/);
+  }
+});
+
 test("protected routes redirect unauthenticated users to login", async ({ page }) => {
   await page.goto("/consultation");
   await expect(page).toHaveURL(/\/login\?next=%2Fconsultation/);

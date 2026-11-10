@@ -1,11 +1,13 @@
 import { getEnv } from "@/config/env";
 import { AppError, isAppError } from "@/lib/api/errors";
-import { corsPreflight, withApi } from "@/lib/api/handler";
+import { corsPreflight, errorResponse, withApi } from "@/lib/api/handler";
+import { getTranscriptionSemaphore } from "@/lib/security/concurrency";
 import { normalizeMime, readBodyWithLimit, validateAudioPayload, wipeBuffer } from "@/lib/validation/audio";
 import { transcribeAndRedact } from "@/services/consultation-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Must exceed AZURE_SPEECH_TIMEOUT_MS (overall deadline incl. retries, default 600 s).
 export const maxDuration = 800;
 
 /**
@@ -37,15 +39,28 @@ export const POST = withApi(
     const durationHeader = Number(request.headers.get("x-audio-duration"));
     const audioSeconds = Number.isFinite(durationHeader) && durationHeader >= 0 && durationHeader < 6 * 3600 ? durationHeader : null;
 
-    let audio: Uint8Array | null = await readBodyWithLimit(request.body, env.MAX_AUDIO_BYTES);
-    if (declaredLength > 0 && audio.byteLength !== declaredLength) {
-      wipeBuffer(audio);
-      throw new AppError("VALIDATION_ERROR", "Încărcarea audio este incompletă. Reîncercați.");
+    const release = getTranscriptionSemaphore(() => getEnv().MAX_CONCURRENT_TRANSCRIPTIONS).tryAcquire();
+    if (!release) {
+      return errorResponse(new AppError("RATE_LIMITED", "Serverul procesează deja numărul maxim de consultații. Reîncercați în câteva momente."), {
+        "Retry-After": "30",
+      });
     }
+
+    let audio: Uint8Array | null;
     try {
-      validateAudioPayload(audio, mime, env.MAX_AUDIO_BYTES);
+      audio = await readBodyWithLimit(request.body, env.MAX_AUDIO_BYTES);
+      if (declaredLength > 0 && audio.byteLength !== declaredLength) {
+        wipeBuffer(audio);
+        throw new AppError("VALIDATION_ERROR", "Încărcarea audio este incompletă. Reîncercați.");
+      }
+      try {
+        validateAudioPayload(audio, mime, env.MAX_AUDIO_BYTES);
+      } catch (e) {
+        wipeBuffer(audio);
+        throw e;
+      }
     } catch (e) {
-      wipeBuffer(audio);
+      release();
       throw e;
     }
 
@@ -70,6 +85,7 @@ export const POST = withApi(
         } finally {
           wipeBuffer(audio);
           audio = null;
+          release();
           controller.close();
         }
       },
